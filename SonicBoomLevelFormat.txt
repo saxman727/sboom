@@ -1,0 +1,212 @@
+==================================================
+
+SONIC BOOM NEW LEVEL FORMAT SPECS FOR RELEASE #1
+
+==================================================
+
+The level format was completely redone for the Sonic Boom engine to allow more
+RAM to be available to programmers. More RAM means more neat features that can
+be introduced into games. The new format also supports larger zones up to the
+theoretical size of 0x8000 x 0x2000. The engine was also enhanced to allow
+zones to wrap vertically at multiple points instead of the supported 0x800 in
+Sonic 2. Wrap points include 0x2000, 0x1000, 0x800, 0x400, and 0x200. Finally,
+the new format separates the visual layout from physical layout, allowing one
+meta-block's collision data to be used with a different meta-block.
+
+This documentation details the format of the new level format used in the
+Sonic Boom engine. The new format is a good bit more involved in terms of
+creating programs that support it, but the benefits of supporting it are well
+worth the labor.
+
+The one down side to using the new format is it may cause minor performance
+deductions in certain sections of certain zones that otherwise wouldn't have
+occured. The Sonic Boom engine is heavily optimized to minimize this and in a
+vast majority of cases, the gameplay will not seem any different. The best way
+to avoid any potential slow-downs is to optimize levels by not placing too
+many objects in one location. If for some reason you decide you don't want to
+use the new format in your game, you can go into the source code and change
+the "OLD_LEVEL_FORMAT" constant to 1 to use the original Sonic 2 level format.
+
+Note: Because Sonic Boom runs on a Motorola 68000, all words are big-endian.
+
+
+
+------------------------------------------------------------------------------
+SONIC BOOM LEVEL LAYOUT FORMAT IN RAM
+------------------------------------------------------------------------------
+
+Note: Kosinski compression is used in the ROM.
+
+
+HEADER:
+
+	byte	frontRows
+	byte	backRows
+	
+	{
+		short	format // visual layout
+	} ... [frontRows]
+	
+	{
+		short	format // physical layout
+	} ... [frontRows]
+	
+	{
+		short	format
+	} ... [backRows]
+
+A maximum of 64 rows are allowed for each group.
+
+The 'format' word is broken up into the following bits:
+
+tttttppp pppppppp
+
+t = type
+p = pointer
+
+The following types are valid:
+
+0x00 (00000) = AST: Always specified type
+0x01 (00001) = BALE: Bitwise-AND at line-end
+0x02 (00010) = WOLE: Wrap once at line-end
+0x03 (00011) = ZLE: Zero at line-end
+0x10 (10000) = (reserved -- acts as AST)
+0x11 (10001) = BALE4: Bitwise-AND at line-end 4-bit
+0x12 (10010) = WOLE4: Wrap once at line-end 4-bit
+0x13 (10011) = ZLE4: Zero at line-end 4-bit
+
+For types other than AST, the pointer refers to a multiple of 2, added to
+address 0x8000 in RAM. For an example, if the pointer is 0x13B, the location
+in RAM that it is pointing to is 0x8276. The location referenced will hold row
+data.
+
+In the case of AST and AST4, the pointer is used to reference a tile number
+from 0 to 255. No row data will be used with these to types.
+
+The BALE format will loop a row after a certain point, and that row will be
+looped for the rest of the row. Because it uses a bitwise-AND operation, the
+row length must be a power of 2 (e.g. 16, 32, 64, etc.).
+
+WOLE allows more flexibility in terms of setting the loop point. The length of
+the row can be any size. The downside to WOLE is it only wraps once. The wrap
+point in WOLE must be 64 or greater.
+
+Finally, the ZLE format will assume the value of zero after the end of the row
+is reached.
+
+
+
+ROW DATA FORMAT:
+
+	byte	attribute
+	byte	[...]
+
+The row format type specified in the header will determine how the row data
+will be formatted. The following formats are used following the 'attribute'
+byte:
+
+BALE FORMAT:
+
+	{
+		byte	metaBlock
+	} ... [attribute + 1]
+
+WOLE FORMAT:
+
+	{
+		byte	metaBlock
+	} ... [attribute]
+
+ZLE FORMAT:
+
+	{
+		byte	metaBlock
+	} ... [attribute]
+
+BALE4 FORMAT:
+
+	{
+		nybble	metaBlockRef
+	} ... [attribute + 1]
+
+	{
+		byte	metaBlock
+	} ...
+
+WOLE4 FORMAT:
+
+	{
+		nybble	metaBlockRef
+	} ... [attribute]
+
+	{
+		byte	metaBlock
+	} ...
+
+ZLE4 FORMAT:
+
+	{
+		nybble	metaBlockRef
+	} ... [attribute]
+
+	{
+		byte	metaBlock
+	} ...
+
+The 4-bit formats rely on meta-block references. This means that after the
+first array of bytes, there will be a dynamic array containing every single
+meta-block used in that row. The nybbles refer to which byte in the second
+array is used for the given point in the level. Take the following data for
+example:
+
+nybble	0, 0, 1, 2, 0, 5, 2, 2, ...
+byte	0x2A, 0x07, 0x0B, 0x0D, 0x5F, 0x21, ...
+
+The actual layout would be as follows:
+
+0x2A, 0x2A, 0x07, 0x0B, 0x2A, 0x21, 0x0B, 0x0B, ...
+
+Because a nybble is 4-bits wide, only 16 different meta-block values can be
+referenced in a 4-bit formatted row.
+
+
+
+------------------------------------------------------------------------------
+SONIC BOOM RING LAYOUT FORMAT IN ROM
+------------------------------------------------------------------------------
+
+The format for the ring layout is almost the same as the original format used
+in Sonic 2, but a few minor tweaks have been made to extend the range in which
+rings can be placed. This format is used:
+
+{
+	short	xPos
+	short	yPos
+} ...
+
+{
+	short	terminator
+	short	unused
+}
+
+Unlike the original format where the 'terminator' word could be any negative
+number, it must be 0xFFFF.
+
+The 'xPos' word is broken up into this format:
+
+oxxxxxxx xxxxxxxx
+
+o = orientation
+x = horizontal position
+
+The orientation determines if this is a row or column of rings.
+
+The following format is used for the 'yPos' word:
+
+lllyyyyy yyyyyyyy
+
+l = length
+y = vertical position
+
+The length determines the number of rings between 1 and 8.
+
